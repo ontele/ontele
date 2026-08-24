@@ -1,0 +1,37 @@
+apiVersion: v1
+entries:
+  ontele:
+  - annotations:
+      artifacthub.io/category: streaming-messaging
+      artifacthub.io/license: Apache-2.0
+    apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-08-24T13:47:39.598959813Z"
+    description: Ontele media server — library (movies, TV, music) with metadata,
+      direct play and HLS transcoding, HDHomeRun live TV, DVR with commercial skip
+      — plus its PostgreSQL, oauth2-proxy identity front door and a Loki/Promtail/Prometheus/
+      Grafana observability stack. Every companion is optional.
+    digest: d0b24fb4976c4bf35d2d45de3d4ef36963c381e685597e61243a4026aa630d13
+    home: https://github.com/ontele/ontele
+    keywords:
+    - media
+    - dvr
+    - hdhomerun
+    - plex
+    - jellyfin
+    - transcoding
+    - oauth2-proxy
+    - loki
+    - grafana
+    kubeVersion: '>=1.27.0-0'
+    maintainers:
+    - name: The Ontele Authors
+      url: https://github.com/ontele/ontele
+    name: ontele
+    sources:
+    - https://github.com/ontele/ontele
+    type: application
+    urls:
+    - https://ontele.github.io/ontele/ontele-0.1.0.tgz
+    version: 0.1.0
+generated: "2026-08-24T13:47:39.596456313Z"
