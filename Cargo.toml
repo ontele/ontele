@@ -1,0 +1,63 @@
+[package]
+name = "ontele"
+version = "0.1.0"
+edition = "2024"
+description = "Media server: library, metadata, HDHomeRun live TV, DVR, commercial skip"
+license = "Apache-2.0"
+repository = "https://github.com/ontele/ontele"
+rust-version = "1.88"
+
+[dependencies]
+anyhow = "1.0.104"
+async-trait = "0.1.92"
+axum = { version = "0.8", features = ["macros", "multipart"] }
+blake3 = "1.8.7"
+bytes = "1.12.1"
+chrono = { version = "0.4.45", features = ["serde"] }
+clap = { version = "4.6.6", features = ["derive", "env"] }
+crc32fast = "1.5.1"
+dashmap = "6.2.1"
+flate2 = "1.1.9"
+futures = "0.3.34"
+hex = "0.4.3"
+http-body-util = "0.1.5"
+lofty = "0.25.1"
+metrics = { version = "0.24.6", default-features = false }
+metrics-exporter-prometheus = { version = "0.18.3", default-features = false }
+mime_guess = "2.0.5"
+notify = "8.2.0"
+notify-debouncer-mini = "0.7.0"
+once_cell = "1.21.4"
+parking_lot = "0.12.5"
+percent-encoding = "2.3.2"
+quick-xml = { version = "0.42.0", features = ["encoding", "serialize"] }
+rand = "0.10.2"
+regex = "1.13.1"
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "stream", "gzip", "rustls", "http2", "charset", "query", "system-proxy"] }
+rust-embed = { version = "8.12.0", features = ["include-exclude"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "json", "migrate", "macros"] }
+thiserror = "2.0.20"
+tokio = { version = "1.53.1", features = ["full"] }
+tokio-stream = "0.1.19"
+tokio-util = { version = "0.7.19", features = ["io"] }
+tower = "0.5.3"
+tower-http = { version = "0.7.0", features = ["fs", "compression-full", "trace", "set-header", "timeout", "cors", "limit"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+unicode-normalization = "0.1.25"
+urlencoding = "2.1.3"
+walkdir = "2.5.0"
+
+[dev-dependencies]
+clap = { version = "4.6.6", features = ["derive"] }
+tempfile = "3.27.0"
+tower = { version = "0.5.3", features = ["util"] }
+
+[profile.release]
+# thin LTO gives most of the size/speed win; codegen-units=1 would add minutes
+# of single-threaded link time for a few percent
+lto = "thin"
+strip = true
+opt-level = 3

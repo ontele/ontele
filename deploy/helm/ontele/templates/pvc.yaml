@@ -1,0 +1,40 @@
+{{- range $name, $spec := (dict "data" .Values.persistence.data "recordings" .Values.persistence.recordings) }}
+{{- if and $spec.enabled (not $spec.existingClaim) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ontele.fullname" $ }}-{{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" $ "component" "server") | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml $spec.accessModes | nindent 4 }}
+  {{- include "ontele.storageClassName" (dict "root" $ "local" $spec.storageClass) | nindent 2 }}
+  resources:
+    requests:
+      storage: {{ $spec.size }}
+{{- end }}
+{{- end }}
+{{- range $name, $lib := (dict "media" .Values.persistence.media "music" .Values.persistence.music) }}
+{{- if eq (include "ontele.libraryNeedsPvc" $lib) "true" }}
+---
+# Auto-created library claim (no existingClaim/hostPath/nfs given); fill it
+# with your files or switch to a share you already have.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ontele.fullname" $ }}-{{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" $ "component" "server") | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml $lib.accessModes | nindent 4 }}
+  {{- include "ontele.storageClassName" (dict "root" $ "local" $lib.storageClass) | nindent 2 }}
+  resources:
+    requests:
+      storage: {{ $lib.size }}
+{{- end }}
+{{- end }}

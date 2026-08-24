@@ -1,0 +1,16 @@
+{{- if .Values.prometheus.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "prometheus") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "prometheus") | nindent 4 }}
+spec:
+  selector:
+    {{- include "ontele.selectorLabels" (dict "root" . "component" "prometheus") | nindent 4 }}
+  ports:
+    - name: http
+      port: 9090
+      targetPort: http
+{{- end }}

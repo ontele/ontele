@@ -1,0 +1,132 @@
+<!doctype html>
+<!-- Copyright 2026 The Ontele Authors — SPDX-License-Identifier: Apache-2.0 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ontele</title>
+<meta name="theme-color" content="#07080c">
+<meta name="color-scheme" content="dark">
+<script>/* pre-paint theme: core.js re-applies with full logic */
+try{var t=JSON.parse(localStorage.getItem("ontele.theme")),a=JSON.parse(localStorage.getItem("ontele.accent")),d=t==="night"||(t!=="day"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.dataset.theme=d?"dark":"light";if(a&&a!=="amber")document.documentElement.dataset.accent=a}catch(e){}</script>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<style>
+/* Fonts are vendored (Sora + Inter, OFL) so the UI works with zero egress. */
+@font-face{font-family:'Sora';font-style:normal;font-weight:400;font-display:swap;src:url('/vendor/fonts/sora-latin-400-normal.woff2') format('woff2')}
+@font-face{font-family:'Sora';font-style:normal;font-weight:600;font-display:swap;src:url('/vendor/fonts/sora-latin-600-normal.woff2') format('woff2')}
+@font-face{font-family:'Sora';font-style:normal;font-weight:700;font-display:swap;src:url('/vendor/fonts/sora-latin-700-normal.woff2') format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:400;font-display:swap;src:url('/vendor/fonts/inter-latin-400-normal.woff2') format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:500;font-display:swap;src:url('/vendor/fonts/inter-latin-500-normal.woff2') format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:600;font-display:swap;src:url('/vendor/fonts/inter-latin-600-normal.woff2') format('woff2')}
+</style>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="beam" aria-hidden="true"><i class="b1"></i><i class="b2"></i><i class="b3"></i></div>
+
+<nav class="rail" aria-label="Primary">
+  <a class="brand" href="#/home" title="Ontele" aria-label="Ontele home">
+    <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+      <circle cx="12" cy="12" r="4.4" fill="currentColor"/>
+      <g stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none">
+        <path d="M12 2.2v3"/><path d="M12 18.8v3"/><path d="M2.2 12h3"/><path d="M18.8 12h3"/>
+        <path d="M5.1 5.1l2.1 2.1"/><path d="M16.8 16.8l2.1 2.1"/><path d="M18.9 5.1l-2.1 2.1"/><path d="M7.2 16.8l-2.1 2.1"/>
+      </g>
+    </svg>
+  </a>
+  <a href="#/home" data-nav="home" title="Home"><svg viewBox="0 0 24 24"><path d="M4 11.5 12 4l8 7.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/></svg><span>Home</span></a>
+  <a href="#/movies" data-nav="movies" title="Movies"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z" class="thin"/><path d="M4 9h16M8 5v14M16 5v14" class="thin"/></svg><span>Movies</span></a>
+  <a href="#/shows" data-nav="shows" title="Shows"><svg viewBox="0 0 24 24"><path d="M3 7h18v12H3z" class="thin"/><path d="m9 3 3 3 3-3" class="thin"/></svg><span>Shows</span></a>
+  <a href="#/music" data-nav="music" title="Music"><svg viewBox="0 0 24 24"><path d="M9 18.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zm11-2a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/><path d="M9 18.5V6l11-2.5v13" class="thin"/></svg><span>Music</span></a>
+  <a href="#/live" data-nav="live" title="Live TV"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="3.2"/><path d="M5 13a7 7 0 0 1 14 0M2.5 13a9.5 9.5 0 0 1 19 0" class="thin"/></svg><span>Live</span></a>
+  <a href="#/dvr" data-nav="dvr" title="DVR"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" class="thin"/><circle cx="12" cy="12" r="3.4"/></svg><span>DVR</span></a>
+  <div class="rail-gap"></div>
+  <a href="#/settings" data-nav="settings" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" class="thin"/><path d="M12 2.8v3M12 18.2v3M2.8 12h3M18.2 12h3M5.5 5.5l2.1 2.1M16.4 16.4l2.1 2.1M18.5 5.5l-2.1 2.1M7.6 16.4l-2.1 2.1" class="thin"/></svg><span>Settings</span></a>
+</nav>
+
+<header class="topbar">
+  <button class="search glass" id="search-btn" type="button" aria-label="Search (press / or ⌘K)">
+    <svg viewBox="0 0 24 24" width="18" height="18"><circle cx="11" cy="11" r="6.5" class="thin"/><path d="m16 16 4.5 4.5" class="thin"/></svg>
+    <span class="search-label">Search movies, shows, music, channels…</span>
+    <kbd>⌘K</kbd>
+  </button>
+  <div class="topbar-right">
+    <span id="scan-pill" class="pill" hidden><i class="spin"></i><span>Scanning</span></span>
+    <button id="user-btn" class="avatar" type="button" title="Account" aria-label="Account"></button>
+  </div>
+</header>
+
+<main id="view" tabindex="-1"></main>
+
+<!-- Music dock: persistent mini player -->
+<aside id="dock" class="dock" hidden aria-label="Now playing"></aside>
+
+<!-- Video player overlay: ambient light bleed sampled from the video -->
+<div id="player" class="player" hidden>
+  <canvas id="ambient" width="32" height="18" aria-hidden="true"></canvas>
+  <video id="video" playsinline crossorigin="anonymous"></video>
+  <div class="p-shade top"></div>
+  <div class="p-shade bottom"></div>
+  <div class="p-top">
+    <button id="p-back" class="icon-btn" title="Back (Esc)"><svg viewBox="0 0 24 24"><path d="M14.5 5.5 8 12l6.5 6.5" class="thin"/></svg></button>
+    <div class="p-title">
+      <span class="eyebrow" id="p-eyebrow"></span>
+      <h2 id="p-heading"></h2>
+    </div>
+    <span id="p-mode" class="p-badge" hidden></span>
+    <span id="p-live" class="live-dot" hidden><i></i>LIVE</span>
+  </div>
+  <div id="p-center" class="p-center" aria-hidden="true"></div>
+  <button id="p-skip" class="skip-pill" hidden>Skip break <span id="p-skiptime"></span></button>
+  <div id="p-next" class="up-next" hidden></div>
+  <div class="p-controls glass">
+    <div id="p-scrub" class="scrub" role="slider" aria-label="Seek" aria-valuemin="0" tabindex="0">
+      <div class="scrub-buffer" id="p-buffer"></div>
+      <div class="scrub-fill" id="p-fill"></div>
+      <div class="scrub-marks" id="p-marks"></div>
+      <div class="scrub-chapters" id="p-chapters"></div>
+      <div class="scrub-thumb" id="p-thumb"></div>
+      <div class="scrub-preview" id="p-preview" hidden><div class="sprite"></div><span class="t"></span></div>
+    </div>
+    <div class="p-row">
+      <button id="p-play" class="icon-btn big" title="Play/Pause (Space)"></button>
+      <button id="p-r10" class="icon-btn" title="Back 10s (←)"><svg viewBox="0 0 24 24"><path d="M11 7 6 12l5 5" class="thin"/><path d="M18 7l-5 5 5 5" class="thin"/></svg></button>
+      <button id="p-f30" class="icon-btn" title="Forward 30s (→)"><svg viewBox="0 0 24 24"><path d="m13 7 5 5-5 5" class="thin"/><path d="m6 7 5 5-5 5" class="thin"/></svg></button>
+      <div class="vol">
+        <button id="p-mute" class="icon-btn" title="Mute (M)"><svg viewBox="0 0 24 24"><path d="M4 9v6h3.5L13 20V4L7.5 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7" class="thin"/></svg></button>
+        <input id="p-vol" type="range" min="0" max="1" step="0.02" value="1" aria-label="Volume">
+      </div>
+      <span class="p-time"><span id="p-cur">0:00</span><em>/</em><span id="p-dur">0:00</span></span>
+      <span id="p-chapter" class="p-chapter"></span>
+      <span class="flex"></span>
+      <label class="autoskip" title="Jump over detected ad breaks"><input type="checkbox" id="p-autoskip"> <span>Auto-skip ads</span></label>
+      <button id="p-subs" class="icon-btn" title="Subtitles (C)"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" class="thin"/><path d="M7 12h5M14 12h3M7 15.5h3M12 15.5h5" class="thin"/></svg></button>
+      <button id="p-audio" class="icon-btn" title="Audio track"><svg viewBox="0 0 24 24"><path d="M4 10v4h3l4 4V6L7 10z"/><path d="M14.5 9.5a3.5 3.5 0 0 1 0 5M17 7a7 7 0 0 1 0 10" class="thin"/></svg></button>
+      <button id="p-settings" class="icon-btn" title="Quality & speed"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 12h3M11 12h9M4 17h12M20 17h0" class="thin"/><circle cx="16" cy="7" r="2" class="thin"/><circle cx="9" cy="12" r="2" class="thin"/><circle cx="18" cy="17" r="2" class="thin"/></svg></button>
+      <button id="p-pip" class="icon-btn" title="Picture in picture (P)"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" class="thin"/><rect x="11.5" y="11" width="7" height="5" rx="1"/></svg></button>
+      <button id="p-fs" class="icon-btn" title="Fullscreen (F)"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" class="thin"/></svg></button>
+    </div>
+    <div id="p-menu" class="p-menu glass" hidden></div>
+  </div>
+</div>
+
+<div id="palette" class="palette" hidden>
+  <div class="palette-box glass">
+    <div class="palette-input">
+      <svg viewBox="0 0 24 24" width="20" height="20"><circle cx="11" cy="11" r="6.5" class="thin"/><path d="m16 16 4.5 4.5" class="thin"/></svg>
+      <input id="palette-q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false" aria-label="Search">
+      <kbd>esc</kbd>
+    </div>
+    <div id="palette-results" class="palette-results" role="listbox"></div>
+  </div>
+</div>
+
+<div id="modal-root"></div>
+<div id="toasts" aria-live="polite"></div>
+
+<script src="/vendor/hls.min.js"></script>
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+{{ .Chart.Name }} {{ .Chart.Version }} (app {{ .Chart.AppVersion }}) is rolling out in namespace {{ .Release.Namespace }}.
+
+URL: {{ include "ontele.publicUrl" . }}
+{{- if .Values.grafana.enabled }}
+Grafana: {{ include "ontele.publicUrl" . }}/grafana/  (same login{{ if .Values.oauth2Proxy.enabled }}, identity via oauth2-proxy{{ end }})
+{{- end }}
+{{- if not (or .Values.ingress.enabled .Values.httpRoute.enabled .Values.gateway.enabled .Values.externalUrl) }}
+
+No Ingress/HTTPRoute is enabled. For a quick look:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "ontele.edgeService" . }} 8080:{{ include "ontele.edgePort" . }}
+  open http://localhost:8080
+{{- end }}
+
+Identity: {{ if .Values.oauth2Proxy.enabled }}oauth2-proxy ({{ if .Values.dex.enabled }}bundled Dex — TRIAL ONLY{{ else }}{{ .Values.oauth2Proxy.provider }} @ {{ .Values.oauth2Proxy.oidcIssuerUrl }}{{ end }}){{ else }}ONTELE_AUTH={{ .Values.config.auth }} — Ontele is exposed WITHOUT a proxy{{ end }}
+{{- if .Values.dex.enabled }}
+Dev users (dex.staticPasswords):
+{{- range .Values.dex.staticPasswords }}
+  - {{ .email }}  (password: "password" unless you changed the hash)
+{{- end }}
+{{- end }}
+{{- if and .Values.oauth2Proxy.enabled (not .Values.config.adminUsers) (not .Values.config.adminGroups) }}
+
+No config.adminUsers/adminGroups set: the FIRST user to sign in becomes admin.
+{{- end }}
+
+Library: {{ if .Values.persistence.media.enabled }}{{ .Values.config.mediaDirs }}{{ else }}(no media volume){{ end }}{{ if .Values.persistence.music.enabled }}, {{ .Values.config.musicDirs }}{{ end }} — scans start automatically; Settings → Library to add folders.
+Tuner: {{ if .Values.hostNetwork }}hostNetwork (UDP discovery){{ else if .Values.config.hdhrIp }}{{ .Values.config.hdhrIp }}{{ else }}not configured — set config.hdhrIp or hostNetwork=true{{ end }}
+
+Pods: {{ include "ontele.fullname" . }}-0{{ if .Values.dex.enabled }}, {{ include "ontele.component" (dict "root" . "name" "dex") }}-0{{ end }}{{ if .Values.postgresql.enabled }}, {{ include "ontele.component" (dict "root" . "name" "postgresql") }}-0{{ end }} (stable StatefulSet names)
+
+Check:   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+Logs:    kubectl -n {{ .Release.Namespace }} logs {{ include "ontele.fullname" . }}-0 -f
+Metrics: kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "ontele.fullname" . }} 7979:{{ .Values.service.port }}  →  http://localhost:7979/metrics

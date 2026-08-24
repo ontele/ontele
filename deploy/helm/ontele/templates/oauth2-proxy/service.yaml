@@ -1,0 +1,25 @@
+{{- if .Values.oauth2Proxy.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "oauth2-proxy") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "oauth2-proxy") | nindent 4 }}
+  {{- with .Values.oauth2Proxy.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.oauth2Proxy.service.type }}
+  selector:
+    {{- include "ontele.selectorLabels" (dict "root" . "component" "oauth2-proxy") | nindent 4 }}
+  ports:
+    - name: http
+      port: 4180
+      targetPort: http
+      protocol: TCP
+      {{- if and (eq .Values.oauth2Proxy.service.type "NodePort") .Values.oauth2Proxy.service.nodePort }}
+      nodePort: {{ .Values.oauth2Proxy.service.nodePort }}
+      {{- end }}
+{{- end }}

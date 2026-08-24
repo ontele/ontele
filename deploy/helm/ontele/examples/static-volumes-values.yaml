@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Companion values for examples/static-volumes.yaml: storageClass "-" gives
+# these claims `storageClassName: ""`, so they bind to the static PVs above
+# instead of asking a dynamic provisioner. Sizes must be <= the PV capacities.
+# Everything not listed here (loki, prometheus, grafana) keeps the cluster's
+# default StorageClass — give them PVs + "-" too if the cluster has none.
+postgresql:
+  persistence:
+    storageClass: "-"
+    size: 10Gi
+persistence:
+  data:
+    storageClass: "-"
+    size: 20Gi
+  recordings:
+    storageClass: "-"
+    size: 500Gi
+  media:
+    hostPath: /media     # library shares mount directly — no PV/PVC

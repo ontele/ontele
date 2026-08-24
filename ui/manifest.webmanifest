@@ -1,0 +1,10 @@
+{
+  "name": "Ontele",
+  "short_name": "Ontele",
+  "description": "Your library, live TV and DVR in a dark projection room.",
+  "start_url": "/#/home",
+  "display": "standalone",
+  "background_color": "#07080c",
+  "theme_color": "#07080c",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

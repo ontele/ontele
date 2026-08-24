@@ -1,0 +1,47 @@
+{{- if .Values.gateway.enabled }}
+{{- if .Values.httpRoute.parentRefs }}
+{{- fail "gateway.enabled brings its own Gateway and attaches the HTTPRoute to it — leave httpRoute.parentRefs empty (or set gateway.enabled=false to use your own Gateway)" }}
+{{- end }}
+{{- if and .Values.httpRoute.tls (not .Values.gateway.tls.secretName) }}
+{{- fail "gateway.tls.secretName is required for the https listener (or set httpRoute.tls=false for a plain-http edge)" }}
+{{- end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ include "ontele.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "edge") | nindent 4 }}
+  {{- with .Values.gateway.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  gatewayClassName: {{ .Values.gateway.className }}
+  {{- with .Values.gateway.address }}
+  addresses:
+    - type: IPAddress
+      value: {{ . | quote }}
+  {{- end }}
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: {{ .Values.httpRoute.host | quote }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+    {{- if .Values.httpRoute.tls }}
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: {{ .Values.httpRoute.host | quote }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: {{ .Values.gateway.tls.secretName }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+    {{- end }}
+{{- end }}

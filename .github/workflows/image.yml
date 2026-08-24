@@ -1,0 +1,140 @@
+# SPDX-License-Identifier: Apache-2.0
+# Container image build — split from ci.yml so that:
+#   * each architecture builds NATIVELY (amd64 on ubuntu-latest, arm64 on
+#     GitHub's free arm64 runners) — no QEMU-emulated Rust compiles, which
+#     were the 30–60 min cost
+#   * chart/docs-only pushes don't build images at all (paths filter)
+#   * a newer push cancels a superseded in-flight build (concurrency)
+# The two per-arch images are pushed by digest and stitched into one
+# multi-arch manifest (latest, <sha>, <crate version>) in the merge job.
+# Tests still run on every push in ci.yml. :<sha> and :<crate version> are
+# immutable (a version tag is only created once — bump Cargo.toml to move
+# it); :latest tracks main.
+name: image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "ui/**"
+      - "migrations/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # merge job publishes the GitHub Release for new versions
+  packages: write
+
+# Superseded BUILDS are cancelled (job-level group below); the merge job is
+# never cancelled — imagetools applies tags as separate registry PUTs, and
+# killing it between PUTs would leave :latest/:sha/:version inconsistent.
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            # newest hosted arm image (no ubuntu-latest-arm label exists);
+            # bump when GitHub ships ubuntu-26.04-arm
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    concurrency:
+      group: image-build-${{ github.ref }}-${{ matrix.arch }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=image-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=image-${{ matrix.arch }}
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Crate version (the Helm chart's default image tag is appVersion)
+        id: ver
+        run: echo "version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+      - name: Create multi-arch manifest
+        id: tags
+        working-directory: /tmp/digests
+        run: |
+          refs=()
+          for d in *; do refs+=("$IMAGE@sha256:$d"); done
+          tags=(-t "$IMAGE:latest" -t "$IMAGE:${{ github.sha }}")
+          # version tags (0.1.0 and v0.1.0) are immutable: the first build of
+          # a version wins; bump Cargo.toml to move on (mirrors the chart)
+          VER="${{ steps.ver.outputs.version }}"
+          new_version=false
+          if docker buildx imagetools inspect "$IMAGE:$VER" >/dev/null 2>&1; then
+            echo "::notice::$IMAGE:$VER already exists — bump the crate version to move it (use :latest or :<sha> otherwise)"
+          else
+            tags+=(-t "$IMAGE:$VER" -t "$IMAGE:v$VER")
+            new_version=true
+          fi
+          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
+          docker buildx imagetools inspect "$IMAGE:latest"
+          echo "new_version=$new_version" >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+      - name: GitHub Release for a new version
+        if: steps.tags.outputs.new_version == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.tags.outputs.version }}" \
+            --repo "${{ github.repository }}" \
+            --title "Ontele v${{ steps.tags.outputs.version }}" \
+            --notes "Container: ghcr.io/${{ github.repository }}:v${{ steps.tags.outputs.version }} (multi-arch amd64/arm64; also tagged ${{ steps.tags.outputs.version }} and latest). Helm chart: helm repo add ontele https://ontele.github.io/ontele — chart versions live on the helm branch."

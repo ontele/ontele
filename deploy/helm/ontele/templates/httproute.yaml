@@ -1,0 +1,67 @@
+{{- if or .Values.httpRoute.enabled .Values.gateway.enabled }}
+{{- if and (not .Values.httpRoute.parentRefs) (not .Values.gateway.enabled) }}
+{{- fail "httpRoute.parentRefs is required — point it at your Gateway, or set gateway.enabled=true for the in-chart one" }}
+{{- end }}
+{{- $ownGateway := .Values.gateway.enabled }}{{/* gateway.yaml fails on gateway.enabled + explicit parentRefs */}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "ontele.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "edge") | nindent 4 }}
+  {{- with .Values.httpRoute.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- if and .Values.httpRoute.parentRefs (not $ownGateway) }}
+    {{- toYaml .Values.httpRoute.parentRefs | nindent 4 }}
+    {{- else }}
+    - name: {{ include "ontele.fullname" . }}
+      {{- if .Values.httpRoute.tls }}
+      sectionName: https
+      {{- end }}
+    {{- end }}
+  hostnames: [{{ .Values.httpRoute.host | quote }}]
+  rules:
+    {{- if .Values.dex.enabled }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /dex
+      backendRefs:
+        - name: {{ include "ontele.component" (dict "root" . "name" "dex") }}
+          port: 5556
+    {{- end }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ include "ontele.edgeService" . }}
+          port: {{ include "ontele.edgePort" . }}
+{{- if and $ownGateway .Values.httpRoute.tls }}
+---
+# The in-chart Gateway's plain-http listener only redirects to https
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "ontele.fullname" . }}-redirect
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "edge") | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ include "ontele.fullname" . }}
+      sectionName: http
+  hostnames: [{{ .Values.httpRoute.host | quote }}]
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+{{- end }}
+{{- end }}

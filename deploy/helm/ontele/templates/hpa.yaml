@@ -1,0 +1,62 @@
+{{- /* Copyright 2026 The Ontele Authors — SPDX-License-Identifier: Apache-2.0
+HPAs for the ontele and dex StatefulSets. Scaling ontele past 1 replica
+requires RWX storage for the shared data/recordings claims. */}}
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "ontele.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "server") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: {{ include "ontele.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    {{- with .Values.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ . }}
+    {{- end }}
+    {{- with .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ . }}
+    {{- end }}
+{{- end }}
+{{- if and .Values.dex.enabled .Values.dex.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "dex") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "dex") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: {{ include "ontele.component" (dict "root" . "name" "dex") }}
+  minReplicas: {{ .Values.dex.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.dex.autoscaling.maxReplicas }}
+  metrics:
+    {{- with .Values.dex.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ . }}
+    {{- end }}
+{{- end }}

@@ -1,0 +1,44 @@
+{{- if .Values.networkPolicy.enabled }}
+# Identity headers are only trustworthy if nothing but oauth2-proxy can reach
+# Ontele. Prometheus may scrape /metrics. With the proxy disabled the edge
+# (ingress controller) must reach it, so the policy is left open.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ontele.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "server") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ontele.selectorLabels" (dict "root" . "component" "server") | nindent 6 }}
+  policyTypes: ["Ingress"]
+  ingress:
+    {{- if .Values.oauth2Proxy.enabled }}
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "ontele.selectorLabels" (dict "root" . "component" "oauth2-proxy") | nindent 14 }}
+        # the `helm test` pod
+        - podSelector:
+            matchLabels:
+              {{- include "ontele.selectorLabels" (dict "root" . "component" "test") | nindent 14 }}
+        {{- if .Values.prometheus.enabled }}
+        - podSelector:
+            matchLabels:
+              {{- include "ontele.selectorLabels" (dict "root" . "component" "prometheus") | nindent 14 }}
+        {{- end }}
+        {{- if .Values.metrics.serviceMonitor.enabled }}
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+        {{- end }}
+      ports:
+        - port: {{ .Values.service.port }}
+    {{- else }}
+    - ports:
+        - port: {{ .Values.service.port }}
+    {{- end }}
+{{- end }}

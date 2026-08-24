@@ -1,0 +1,190 @@
+# SPDX-License-Identifier: Apache-2.0
+# Ontele server. Single replica (one writer to /data + DVR), Recreate
+# strategy so two instances never capture the same airing.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ontele-data
+  namespace: ontele
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ontele-recordings
+  namespace: ontele
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 500Gi
+---
+# Your existing media library. Replace with an NFS/hostPath PV of your own —
+# this claim is a placeholder that expects a PersistentVolume labelled
+# `ontele.io/library: media` to exist.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ontele-media
+  namespace: ontele
+spec:
+  accessModes: ["ReadOnlyMany"]
+  storageClassName: ""
+  selector:
+    matchLabels:
+      ontele.io/library: media
+  resources:
+    requests:
+      storage: 1Ti
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ontele
+  namespace: ontele
+  labels:
+    app.kubernetes.io/name: ontele
+spec:
+  selector:
+    app.kubernetes.io/name: ontele
+  ports:
+    - name: http
+      port: 7979
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ontele
+  namespace: ontele
+  labels:
+    app.kubernetes.io/name: ontele
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ontele
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ontele
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "7979"
+        prometheus.io/path: /metrics
+    spec:
+      # hostNetwork: true   # enables HDHomeRun UDP discovery; else set ONTELE_HDHR
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values: ["amd64"]   # x264 on a Pi is slow; prefer the NUC
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:18-alpine
+          command: ["sh", "-c", "until pg_isready -h postgres -U $POSTGRES_USER; do sleep 2; done"]
+          envFrom:
+            - secretRef:
+                name: ontele-secrets
+      containers:
+        - name: ontele
+          image: ghcr.io/ontele/ontele:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 7979
+          envFrom:
+            - configMapRef:
+                name: ontele-config
+            - secretRef:
+                name: ontele-secrets
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: recordings
+              mountPath: /recordings
+            - name: media
+              mountPath: /media
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            # - name: dri            # VA-API / QSV
+            #   mountPath: /dev/dri
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 500m, memory: 512Mi }
+            limits: { cpu: "4", memory: 4Gi }   # transcodes burst; comskip is CPU-bound
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: ontele-data
+        - name: recordings
+          persistentVolumeClaim:
+            claimName: ontele-recordings
+        - name: media
+          persistentVolumeClaim:
+            claimName: ontele-media
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi     # HLS scratch + comskip work dirs
+        # - name: dri
+        #   hostPath:
+        #     path: /dev/dri
+---
+# Identity headers are only trustworthy if nothing but oauth2-proxy can talk
+# to Ontele. Prometheus may scrape /metrics.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ontele-ingress
+  namespace: ontele
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ontele
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: oauth2-proxy
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: 7979

@@ -1,0 +1,15 @@
+{{- if .Values.prometheus.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "prometheus") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "prometheus") | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- include "ontele.storageClassName" (dict "root" $ "local" .Values.prometheus.persistence.storageClass) | nindent 2 }}
+  resources:
+    requests:
+      storage: {{ .Values.prometheus.persistence.size }}
+{{- end }}

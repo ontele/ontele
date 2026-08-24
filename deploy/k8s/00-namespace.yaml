@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ontele
+  labels:
+    app.kubernetes.io/part-of: ontele
+    pod-security.kubernetes.io/enforce: baseline

@@ -1,0 +1,132 @@
+{{- /* Copyright 2026 The Ontele Authors — SPDX-License-Identifier: Apache-2.0
+Optional HandBrake companion (jlesage/handbrake): web UI + watch-folder
+automated conversion. Deployment (not part of the stable-name contract). */}}
+{{- if .Values.handbrake.enabled }}
+{{- $hb := .Values.handbrake }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "handbrake") }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "handbrake") | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- include "ontele.storageClassName" (dict "root" . "local" $hb.config.storageClass) | nindent 2 }}
+  resources:
+    requests:
+      storage: {{ $hb.config.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "handbrake") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "handbrake") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "ontele.selectorLabels" (dict "root" . "component" "handbrake") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ontele.selectorLabels" (dict "root" . "component" "handbrake") | nindent 8 }}
+    spec:
+      containers:
+        - name: handbrake
+          image: "{{ $hb.image.repository }}:{{ $hb.image.tag }}"
+          imagePullPolicy: {{ $hb.image.pullPolicy }}
+          env:
+            - name: USER_ID
+              value: {{ $hb.env.USER_ID | quote }}
+            - name: GROUP_ID
+              value: {{ $hb.env.GROUP_ID | quote }}
+          ports:
+            - name: web
+              containerPort: 5800
+            - name: vnc
+              containerPort: 5900
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            {{- if or $hb.watch.hostPath $hb.watch.existingClaim }}
+            - name: watch
+              mountPath: /watch
+            {{- end }}
+            {{- if or $hb.output.hostPath $hb.output.existingClaim }}
+            - name: output
+              mountPath: /output
+            {{- end }}
+            {{- if or $hb.storage.hostPath $hb.storage.existingClaim }}
+            - name: storage
+              mountPath: /storage
+              readOnly: {{ $hb.storage.readOnly }}
+            {{- end }}
+            {{- if $hb.dri.enabled }}
+            - name: dri
+              mountPath: /dev/dri
+            {{- end }}
+          {{- with $hb.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $hb.dri.enabled }}
+          securityContext:
+            privileged: true   # /dev/dri device access
+          {{- end }}
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: {{ include "ontele.component" (dict "root" . "name" "handbrake") }}-config
+        {{- if $hb.watch.hostPath }}
+        - name: watch
+          hostPath: { path: {{ $hb.watch.hostPath | quote }} }
+        {{- else if $hb.watch.existingClaim }}
+        - name: watch
+          persistentVolumeClaim: { claimName: {{ $hb.watch.existingClaim | quote }} }
+        {{- end }}
+        {{- if $hb.output.hostPath }}
+        - name: output
+          hostPath: { path: {{ $hb.output.hostPath | quote }} }
+        {{- else if $hb.output.existingClaim }}
+        - name: output
+          persistentVolumeClaim: { claimName: {{ $hb.output.existingClaim | quote }} }
+        {{- end }}
+        {{- if $hb.storage.hostPath }}
+        - name: storage
+          hostPath: { path: {{ $hb.storage.hostPath | quote }} }
+        {{- else if $hb.storage.existingClaim }}
+        - name: storage
+          persistentVolumeClaim: { claimName: {{ $hb.storage.existingClaim | quote }} }
+        {{- end }}
+        {{- if $hb.dri.enabled }}
+        - name: dri
+          hostPath: { path: /dev/dri }
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "handbrake") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "handbrake") | nindent 4 }}
+spec:
+  type: {{ $hb.service.type }}
+  selector:
+    {{- include "ontele.selectorLabels" (dict "root" . "component" "handbrake") | nindent 4 }}
+  ports:
+    - name: web
+      port: {{ $hb.service.webPort }}
+      targetPort: web
+      {{- if and (eq $hb.service.type "NodePort") $hb.service.nodePort }}
+      nodePort: {{ $hb.service.nodePort }}
+      {{- end }}
+    - name: vnc
+      port: {{ $hb.service.vncPort }}
+      targetPort: vnc
+{{- end }}

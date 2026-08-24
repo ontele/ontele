@@ -1,0 +1,47 @@
+{{- if .Values.oauth2Proxy.enabled }}
+{{- $url := include "ontele.publicUrl" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "oauth2-proxy") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "oauth2-proxy") | nindent 4 }}
+data:
+  OAUTH2_PROXY_HTTP_ADDRESS: "0.0.0.0:4180"
+  OAUTH2_PROXY_PROVIDER: {{ if .Values.dex.enabled }}oidc{{ else }}{{ .Values.oauth2Proxy.provider }}{{ end }}
+  {{- if .Values.dex.enabled }}
+  # Bundled Dex: the browser reaches it through the edge at /dex, the proxy
+  # talks to it in-cluster — hence explicit endpoints and no discovery.
+  OAUTH2_PROXY_PROVIDER_DISPLAY_NAME: "Ontele (local users)"
+  OAUTH2_PROXY_OIDC_ISSUER_URL: {{ include "ontele.dex.issuer" . | quote }}
+  OAUTH2_PROXY_SKIP_OIDC_DISCOVERY: "true"
+  OAUTH2_PROXY_LOGIN_URL: {{ printf "%s/auth" (include "ontele.dex.issuer" .) | quote }}
+  OAUTH2_PROXY_REDEEM_URL: "http://{{ include "ontele.component" (dict "root" . "name" "dex") }}:5556/dex/token"
+  OAUTH2_PROXY_OIDC_JWKS_URL: "http://{{ include "ontele.component" (dict "root" . "name" "dex") }}:5556/dex/keys"
+  OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL: "true"
+  OAUTH2_PROXY_APPROVAL_PROMPT: auto
+  {{- else }}
+  OAUTH2_PROXY_OIDC_ISSUER_URL: {{ .Values.oauth2Proxy.oidcIssuerUrl | quote }}
+  {{- end }}
+  OAUTH2_PROXY_EMAIL_DOMAINS: {{ .Values.oauth2Proxy.emailDomains | quote }}
+  OAUTH2_PROXY_SCOPE: {{ .Values.oauth2Proxy.scope | quote }}
+  OAUTH2_PROXY_REDIRECT_URL: {{ default (printf "%s/oauth2/callback" $url) .Values.oauth2Proxy.redirectUrl | quote }}
+  OAUTH2_PROXY_COOKIE_NAME: {{ .Values.oauth2Proxy.cookieName | quote }}
+  OAUTH2_PROXY_COOKIE_SECURE: {{ eq (include "ontele.scheme" .) "https" | quote }}
+  OAUTH2_PROXY_COOKIE_EXPIRE: {{ .Values.oauth2Proxy.cookieExpire | quote }}
+  OAUTH2_PROXY_COOKIE_REFRESH: {{ .Values.oauth2Proxy.cookieRefresh | quote }}
+  # identity → X-Forwarded-* headers Ontele and Grafana trust (prefer-email
+  # would drop X-Forwarded-Email, which both need)
+  OAUTH2_PROXY_PASS_USER_HEADERS: "true"
+  OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
+  OAUTH2_PROXY_PASS_ACCESS_TOKEN: "false"
+  OAUTH2_PROXY_PREFER_EMAIL_TO_USER: "false"
+  OAUTH2_PROXY_UPSTREAMS: {{ include "ontele.oauth2Proxy.upstreams" . | quote }}
+  OAUTH2_PROXY_SKIP_AUTH_ROUTES: "^/healthz$,^/readyz$"
+  OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+  OAUTH2_PROXY_REVERSE_PROXY: "true"
+  OAUTH2_PROXY_UPSTREAM_TIMEOUT: "0s"
+  OAUTH2_PROXY_FLUSH_INTERVAL: "100ms"
+  OAUTH2_PROXY_SILENCE_PING_LOGGING: "true"
+{{- end }}

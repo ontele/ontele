@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: ontele
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["ontele:7979"]
+        labels:
+          app: ontele
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+  - job_name: grafana
+    metrics_path: /grafana/metrics
+    static_configs:
+      - targets: ["grafana:3000"]

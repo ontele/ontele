@@ -1,0 +1,16 @@
+{{- if .Values.dex.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "dex") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "dex") | nindent 4 }}
+spec:
+  selector:
+    {{- include "ontele.selectorLabels" (dict "root" . "component" "dex") | nindent 4 }}
+  ports:
+    - name: http
+      port: 5556
+      targetPort: http
+{{- end }}

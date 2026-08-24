@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: v2
+name: ontele
+description: >-
+  Ontele media server — library (movies, TV, music) with metadata, direct play and
+  HLS transcoding, HDHomeRun live TV, DVR with commercial skip — plus its
+  PostgreSQL, oauth2-proxy identity front door and a Loki/Promtail/Prometheus/
+  Grafana observability stack. Every companion is optional.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.27.0-0"
+home: https://github.com/ontele/ontele
+sources:
+  - https://github.com/ontele/ontele
+keywords: [media, dvr, hdhomerun, plex, jellyfin, transcoding, oauth2-proxy, loki, grafana]
+maintainers:
+  - name: The Ontele Authors
+    url: https://github.com/ontele/ontele
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/category: streaming-messaging

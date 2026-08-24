@@ -1,0 +1,198 @@
+{{- $media := .Values.persistence.media }}
+{{- $music := .Values.persistence.music }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "ontele.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "server") | nindent 4 }}
+spec:
+  # StatefulSet for the stable pod name (ontele-0) and one-at-a-time updates.
+  # Default one replica: /data and the DVR assume a single writer. HPA can
+  # scale it (autoscaling.*) — replicas > 1 needs RWX storage for the shared
+  # claims and session-affinity at the edge.
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  serviceName: {{ include "ontele.fullname" . | trunc 60 | trimSuffix "-" }}-hl
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "ontele.selectorLabels" (dict "root" . "component" "server") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ontele.selectorLabels" (dict "root" . "component" "server") | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.service.port | quote }}
+        prometheus.io/path: /metrics
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "ontele.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "ontele.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- if .Values.hostNetwork }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- if .Values.dri.enabled }}
+        supplementalGroups:
+          {{- toYaml .Values.dri.supplementalGroups | nindent 10 }}
+        {{- end }}
+      {{- if .Values.postgresql.enabled }}
+      initContainers:
+        - name: wait-for-postgres
+          image: "{{ .Values.postgresql.image.repository }}:{{ .Values.postgresql.image.tag }}"
+          imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
+          command: ["sh", "-c", "until pg_isready -h {{ include "ontele.component" (dict "root" . "name" "postgresql") }} -U {{ .Values.postgresql.auth.username }}; do sleep 2; done"]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- end }}
+      containers:
+        - name: ontele
+          image: {{ include "ontele.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "ontele.fullname" . }}
+            - secretRef:
+                name: {{ default (include "ontele.fullname" .) .Values.config.existingSecret }}
+          env:
+            {{- if and (not .Values.postgresql.enabled) .Values.externalDatabase.existingSecret }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.externalDatabase.existingSecret }}
+                  key: {{ .Values.externalDatabase.existingSecretKey }}
+            {{- end }}
+            {{- with .Values.config.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: recordings
+              mountPath: /recordings
+            {{- if $media.enabled }}
+            - name: media
+              mountPath: /media
+              readOnly: {{ $media.readOnly }}
+            {{- end }}
+            {{- if $music.enabled }}
+            - name: music
+              mountPath: /music
+              readOnly: {{ $music.readOnly }}
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.dri.enabled }}
+            - name: dri
+              mountPath: /dev/dri
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.data.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-data" (include "ontele.fullname" .)) .Values.persistence.data.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: recordings
+          {{- if .Values.persistence.recordings.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-recordings" (include "ontele.fullname" .)) .Values.persistence.recordings.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- range $name, $lib := (dict "media" $media "music" $music) }}
+        {{- $nfs := $lib.nfs | default dict }}
+        {{- if $lib.enabled }}
+        - name: {{ $name }}
+          {{- if $lib.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ $lib.existingClaim }}
+            readOnly: {{ $lib.readOnly }}
+          {{- else if $lib.hostPath }}
+          hostPath:
+            path: {{ $lib.hostPath }}
+            type: Directory
+          {{- else if $nfs.server }}
+          nfs:
+            server: {{ $nfs.server }}
+            path: {{ required (printf "persistence.%s.nfs.path is required when nfs.server is set" $name) $nfs.path }}
+            readOnly: {{ $lib.readOnly }}
+          {{- else }}
+          # auto-created claim (see templates/pvc.yaml)
+          persistentVolumeClaim:
+            claimName: {{ include "ontele.fullname" $ }}-{{ $name }}
+            readOnly: {{ $lib.readOnly }}
+          {{- end }}
+        {{- end }}
+        {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.persistence.tmpSizeLimit }}
+        {{- if .Values.dri.enabled }}
+        - name: dri
+          hostPath:
+            path: {{ .Values.dri.hostPath }}
+            type: Directory
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,11 @@
+target/
+ontele-data/
+deploy/
+docs/
+tools/
+!tools/handbrake-postprocess.sh
+tests/
+.git/
+*.md
+!README.md
+.env

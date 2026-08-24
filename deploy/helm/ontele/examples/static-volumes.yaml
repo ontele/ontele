@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: Apache-2.0
+# Pre-provisioned (static) PersistentVolumes for Ontele + PostgreSQL — for
+# clusters without a dynamic provisioner, or when the data must live on a
+# specific disk. Apply BEFORE `helm install`, then install with
+# examples/static-volumes-values.yaml (storageClass "-" makes the chart's
+# claims bind statically instead of asking a provisioner).
+#
+# Edit before applying:
+#   - NAMESPACE / RELEASE below (claimRef pins each PV to one exact claim:
+#     PostgreSQL's StatefulSet claim is ALWAYS data-<release>-postgresql-0;
+#     the chart's own claims are <release>-data and <release>-recordings)
+#   - the local paths (must exist on the node: mkdir -p ... first)
+#   - nuc (kubectl get nodes)
+#   - capacities: each must be >= the matching size in your values
+#
+#   kubectl create namespace media
+#   kubectl apply -f static-volumes.yaml
+#   helm install ontele ../../ontele -n media -f static-volumes-values.yaml ...
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ontele-postgresql-pv
+  labels: { app.kubernetes.io/part-of: ontele }
+spec:
+  capacity: { storage: 10Gi }
+  accessModes: [ReadWriteOnce]
+  storageClassName: ""              # static: no provisioner involved
+  persistentVolumeReclaimPolicy: Retain   # never auto-delete the database
+  claimRef:                         # pin to exactly this claim
+    namespace: ontele               # <- NAMESPACE the release is installed into
+    name: data-ontele-postgresql-0  # <- data-<RELEASE>-postgresql-0
+  local:
+    path: /srv/ontele/postgres      # mkdir -p on that node first
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: [nuc]
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ontele-data-pv
+  labels: { app.kubernetes.io/part-of: ontele }
+spec:
+  capacity: { storage: 20Gi }
+  accessModes: [ReadWriteOnce]
+  storageClassName: ""
+  persistentVolumeReclaimPolicy: Retain
+  claimRef:
+    namespace: ontele               # <- NAMESPACE the release is installed into
+    name: ontele-data               # <- <RELEASE>-data
+  local:
+    path: /srv/ontele/data
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: [nuc]
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ontele-recordings-pv
+  labels: { app.kubernetes.io/part-of: ontele }
+spec:
+  capacity: { storage: 500Gi }
+  accessModes: [ReadWriteOnce]
+  storageClassName: ""
+  persistentVolumeReclaimPolicy: Retain
+  claimRef:
+    namespace: ontele               # <- NAMESPACE the release is installed into
+    name: ontele-recordings         # <- <RELEASE>-recordings
+  local:
+    path: /srv/ontele/recordings
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: [nuc]

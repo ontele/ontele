@@ -1,0 +1,52 @@
+{{- if and (not .Values.grafana.enabled) .Values.grafana.sidecar.enabled }}
+{{- $sc := .Values.grafana.sidecar }}
+# For an EXISTING Grafana running the k8s-sidecar (kube-prometheus-stack or
+# the grafana chart): these labelled ConfigMaps are auto-imported. The
+# dashboard references datasource UIDs `loki` and `prometheus`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "grafana-dashboard") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "grafana-sidecar") | nindent 4 }}
+    {{ $sc.label }}: {{ $sc.labelValue | quote }}
+  {{- with $sc.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  {{- (.Files.Glob "files/dashboards/*.json").AsConfig | nindent 2 }}
+{{- if or .Values.loki.enabled .Values.prometheus.enabled }}
+{{- $loki := include "ontele.component" (dict "root" . "name" "loki") }}
+{{- $prom := include "ontele.component" (dict "root" . "name" "prometheus") }}
+{{- /* Only the datasources whose component this chart actually runs: a
+disabled one would point at a Service that does not exist (and Prometheus is
+isDefault, which would hijack the existing Grafana's default datasource). */}}
+{{- $all := .Files.Get "files/grafana-datasources.yml" | replace "http://loki:3100" (printf "http://%s:3100" $loki) | replace "http://prometheus:9090" (printf "http://%s:9090" $prom) | fromYaml }}
+{{- $ds := list }}
+{{- range $all.datasources }}
+{{- if or (and (eq .uid "loki") $.Values.loki.enabled) (and (eq .uid "prometheus") $.Values.prometheus.enabled) }}
+{{- /* never steal the existing Grafana's default datasource */}}
+{{- $d := deepCopy . }}{{- $_ := unset $d "isDefault" }}
+{{- $ds = append $ds $d }}
+{{- end }}
+{{- end }}
+{{- $_ := set $all "datasources" $ds }}
+---
+# Datasources pointing at the Loki/Prometheus THIS chart runs. Skipped when
+# both are disabled — your Grafana then needs its own datasources with UIDs
+# `loki` and `prometheus` for the dashboard to bind.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "grafana-datasources") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "grafana-sidecar") | nindent 4 }}
+    {{ $sc.datasourceLabel }}: {{ $sc.labelValue | quote }}
+data:
+  ontele-datasources.yml: |
+    {{- toYaml $all | nindent 4 }}
+{{- end }}
+{{- end }}

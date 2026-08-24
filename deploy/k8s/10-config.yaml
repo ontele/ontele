@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+# Non-secret configuration. Values only bootstrap Settings on first run —
+# the Settings page (persisted in Postgres) owns them afterwards.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ontele-config
+  namespace: ontele
+  labels:
+    app.kubernetes.io/name: ontele
+data:
+  ONTELE_ADDR: "0.0.0.0:7979"
+  ONTELE_DATA: /data
+  ONTELE_MEDIA: /media/movies,/media/tv
+  ONTELE_MUSIC: /music
+  ONTELE_RECORDINGS: /recordings
+  ONTELE_AUTH: proxy
+  ONTELE_ADMIN_USERS: "you@example.com"
+  ONTELE_ADMIN_GROUPS: ""
+  ONTELE_XMLTV: ""
+  # UDP broadcast discovery can't cross the CNI: pin the tuner IP here
+  # (or use hostNetwork: true on the Deployment).
+  ONTELE_HDHR: "192.168.1.50"
+  ONTELE_COMMERCIALS: skip
+  ONTELE_LOG_FORMAT: json
+  RUST_LOG: "info,sqlx=warn"
+  TZ: UTC

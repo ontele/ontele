@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# kubectl apply -k deploy/k8s      (or: kubectl apply -f deploy/k8s/)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ontele
+resources:
+  - 00-namespace.yaml
+  - 10-config.yaml
+  - 11-secrets.example.yaml   # replace with your real 11-secrets.yaml
+  - 15-observability-config.yaml
+  - 20-postgres.yaml
+  - 30-ontele.yaml
+  - 40-oauth2-proxy.yaml
+  - 50-loki.yaml
+  - 51-promtail.yaml
+  - 52-prometheus.yaml
+  - 60-grafana.yaml

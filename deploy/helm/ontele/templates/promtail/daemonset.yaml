@@ -1,0 +1,69 @@
+{{- if .Values.promtail.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "promtail") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "promtail") | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "ontele.selectorLabels" (dict "root" . "component" "promtail") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ontele.selectorLabels" (dict "root" . "component" "promtail") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/promtail/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- include "ontele.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "ontele.component" (dict "root" . "name" "promtail") }}
+      {{- with .Values.promtail.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: promtail
+          image: "{{ .Values.promtail.image.repository }}:{{ .Values.promtail.image.tag }}"
+          imagePullPolicy: {{ .Values.promtail.image.pullPolicy }}
+          args: ["-config.file=/etc/promtail/promtail.yml"]
+          env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          ports:
+            - name: http
+              containerPort: 9080
+          volumeMounts:
+            - name: config
+              mountPath: /etc/promtail
+            - name: run
+              mountPath: /run/promtail
+            - name: pods
+              mountPath: /var/log/pods
+              readOnly: true
+            - name: containers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsUser: 0   # needs to read /var/log/pods
+          resources:
+            {{- toYaml .Values.promtail.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "ontele.component" (dict "root" . "name" "promtail") }}
+        - name: run
+          hostPath:
+            path: /run/promtail
+            type: DirectoryOrCreate
+        - name: pods
+          hostPath:
+            path: /var/log/pods
+        - name: containers
+          hostPath:
+            path: /var/lib/docker/containers
+{{- end }}

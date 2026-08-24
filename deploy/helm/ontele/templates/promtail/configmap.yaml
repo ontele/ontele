@@ -1,0 +1,16 @@
+{{- if .Values.promtail.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "promtail") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "promtail") | nindent 4 }}
+data:
+  promtail.yml: |
+    {{- if and (not .Values.loki.enabled) (not .Values.promtail.lokiUrl) }}
+    {{- fail "promtail.lokiUrl is required when loki.enabled=false (your Loki push endpoint), or set promtail.enabled=false if your stack already collects pod logs" }}
+    {{- end }}
+    {{- $loki := default (printf "http://%s:3100/loki/api/v1/push" (include "ontele.component" (dict "root" . "name" "loki"))) .Values.promtail.lokiUrl }}
+    {{- .Files.Get "files/promtail.yml" | replace "http://loki:3100/loki/api/v1/push" $loki | nindent 4 }}
+{{- end }}

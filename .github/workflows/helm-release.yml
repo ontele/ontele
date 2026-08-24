@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: Apache-2.0
+# Publishes deploy/helm/ontele as a Helm repository served by GitHub Pages
+# from the orphan branch `helm` (repo root: index.yaml + ontele-<ver>.tgz).
+#
+# Self-bootstrapping: creates the `helm` branch on first run. Published chart
+# versions are immutable — bump `version:` in Chart.yaml to release again.
+# One-time setup afterwards: Settings → Pages → Deploy from a branch → helm /(root),
+# then:  helm repo add ontele https://<owner>.github.io/<repo>
+name: helm-release
+
+on:
+  push:
+    branches: [main]
+    paths: ["deploy/helm/**", ".github/workflows/helm-release.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: helm-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      BEFORE: ${{ github.event.before }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0   # the immutability guard diffs against the pre-push head
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        with:
+          version: v4.2.3
+
+      - name: Lint and package
+        run: |
+          helm lint deploy/helm/ontele
+          mkdir -p /tmp/pkg
+          helm package deploy/helm/ontele -d /tmp/pkg
+
+      - name: Publish to the `helm` branch
+        run: |
+          set -euo pipefail
+          VER=$(helm show chart deploy/helm/ontele | awk '/^version:/{print $2}')
+          PAGES_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # fetch the helm branch, or bootstrap it as an orphan (no history from main)
+          if git fetch origin helm:helm 2>/dev/null; then
+            echo "using existing helm branch"
+          else
+            git branch helm "$(git commit-tree "$(git mktree </dev/null)" -m 'helm repository root')"
+            echo "bootstrapped orphan helm branch"
+          fi
+          git worktree add pages helm
+          cd pages
+
+          if [ -f "ontele-$VER.tgz" ]; then
+            # Published versions are immutable. If this push actually changed
+            # the chart, going green here would silently serve a stale $VER —
+            # fail so the missing version bump is impossible to miss.
+            if [ -n "${BEFORE:-}" ] && git rev-parse -q --verify "$BEFORE^{commit}" >/dev/null 2>&1 \
+               && ! git diff --quiet "$BEFORE"..HEAD -- deploy/helm/ontele/; then
+              echo "::error::deploy/helm/ontele changed but version $VER is already published — bump version in Chart.yaml"
+              exit 1
+            fi
+            echo "::notice::ontele-$VER.tgz already published and the chart is unchanged — nothing to do"
+            exit 0
+          fi
+          # Index only the NEW tarball, then merge: re-indexing the whole dir
+          # would rewrite every old entry's `created` timestamp.
+          mkdir /tmp/stage
+          cp /tmp/pkg/ontele-"$VER".tgz /tmp/stage/
+          if [ -f index.yaml ]; then
+            helm repo index /tmp/stage --url "$PAGES_URL" --merge index.yaml
+          else
+            helm repo index /tmp/stage --url "$PAGES_URL"
+          fi
+          mv /tmp/stage/ontele-"$VER".tgz /tmp/stage/index.yaml .
+          touch .nojekyll
+          [ -f index.html ] || cat > index.html <<EOF
+          <!doctype html><title>Ontele Helm repository</title>
+          <pre>
+          helm repo add ontele $PAGES_URL
+          helm install ontele ontele/ontele -n media --create-namespace
+          </pre>
+          EOF
+          git add -A
+          git commit -m "publish ontele $VER"
+          git push origin helm

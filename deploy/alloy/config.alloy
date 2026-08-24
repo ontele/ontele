@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: Apache-2.0
+// Grafana Alloy — the supported successor to Promtail (EOL 2026-03-02).
+// Same behaviour as promtail/promtail-docker.yml: tail every compose
+// container, lift Ontele's JSON `level`/`target` into labels and keep
+// kind/status/route as structured metadata.
+
+discovery.docker "containers" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "5s"
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=ontele"]
+  }
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "app"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  forward_to = [loki.process.ontele.receiver]
+}
+
+loki.process "ontele" {
+  stage.match {
+    selector = "{app=\"ontele\"}"
+    stage.json {
+      expressions = { level = "level", target = "target", kind = "kind", status = "status", route = "route" }
+    }
+    stage.labels {
+      values = { level = "", target = "" }
+    }
+    stage.structured_metadata {
+      values = { kind = "", status = "", route = "" }
+    }
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

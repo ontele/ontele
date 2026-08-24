@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ontele.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "server") | nindent 4 }}
+data:
+  ONTELE_ADDR: "0.0.0.0:{{ .Values.service.port }}"
+  ONTELE_DATA: /data
+  ONTELE_MEDIA: {{ if .Values.persistence.media.enabled }}{{ .Values.config.mediaDirs | quote }}{{ else }}""{{ end }}
+  ONTELE_MUSIC: {{ if .Values.persistence.music.enabled }}{{ .Values.config.musicDirs | quote }}{{ else }}""{{ end }}
+  ONTELE_RECORDINGS: /recordings
+  ONTELE_AUTH: {{ .Values.config.auth | quote }}
+  ONTELE_ADMIN_USERS: {{ .Values.config.adminUsers | quote }}
+  ONTELE_ADMIN_GROUPS: {{ .Values.config.adminGroups | quote }}
+  ONTELE_HDHR: {{ .Values.config.hdhrIp | quote }}
+  ONTELE_XMLTV: {{ .Values.config.xmltv | quote }}
+  ONTELE_COMMERCIALS: {{ .Values.config.commercials | quote }}
+  ONTELE_DVR_POST_CMD: {{ .Values.config.dvrPostCmd | quote }}
+  ONTELE_LOG_FORMAT: {{ .Values.config.logFormat | quote }}
+  RUST_LOG: {{ .Values.config.rustLog | quote }}
+  TZ: {{ .Values.config.timezone | quote }}

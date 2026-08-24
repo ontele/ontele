@@ -1,0 +1,6 @@
+/target
+/ontele-data
+/ontele
+.env
+*.log
+.DS_Store

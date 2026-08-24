@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: Apache-2.0
+# Dex — a tiny OpenID Connect provider used ONLY for local trials
+# (docker-compose.dev-idp.yml). Static users, in-memory storage, no TLS.
+# Never expose this on a network you don't trust.
+issuer: http://localhost:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true
+  responseTypes: ["code"]
+
+staticClients:
+  - id: ontele
+    name: Ontele
+    secret: ontele-dev-secret
+    redirectURIs:
+      - http://localhost:4180/oauth2/callback
+
+enablePasswordDB: true
+# Both passwords are "password" (bcrypt). Edit or add users freely.
+staticPasswords:
+  - email: admin@example.com
+    username: admin
+    userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+  - email: viewer@example.com
+    username: viewer
+    userID: "5d9b2d7a-7f9d-4d1e-9a8e-2c5f1b3e4a6c"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"

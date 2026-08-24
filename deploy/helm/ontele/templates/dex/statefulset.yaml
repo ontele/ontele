@@ -1,0 +1,60 @@
+{{- if .Values.dex.enabled }}
+apiVersion: apps/v1
+{{- if or (gt (int .Values.dex.replicaCount) 1) .Values.dex.autoscaling.enabled }}
+{{- fail "dex ships with in-memory storage: a second replica breaks sign-in (auth codes and signing keys are per-pod). Scale ontele instead, or bring a production IdP via oauth2Proxy.oidcIssuerUrl." }}
+{{- end }}
+kind: StatefulSet
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "dex") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "dex") | nindent 4 }}
+spec:
+  {{- if not .Values.dex.autoscaling.enabled }}
+  replicas: {{ .Values.dex.replicaCount }}
+  {{- end }}
+  serviceName: {{ include "ontele.component" (dict "root" . "name" "dex") | trunc 60 | trimSuffix "-" }}-hl
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "ontele.selectorLabels" (dict "root" . "component" "dex") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ontele.selectorLabels" (dict "root" . "component" "dex") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/dex/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- include "ontele.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+      containers:
+        - name: dex
+          image: "{{ .Values.dex.image.repository }}:{{ .Values.dex.image.tag }}"
+          imagePullPolicy: {{ .Values.dex.image.pullPolicy }}
+          args: ["dex", "serve", "/etc/dex/config.yaml"]
+          ports:
+            - name: http
+              containerPort: 5556
+          volumeMounts:
+            - name: config
+              mountPath: /etc/dex
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /dex/healthz
+              port: http
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.dex.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "ontele.component" (dict "root" . "name" "dex") }}
+{{- end }}

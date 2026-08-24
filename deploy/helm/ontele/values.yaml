@@ -1,0 +1,460 @@
+# SPDX-License-Identifier: Apache-2.0
+# Default values for the Ontele chart. Every companion (PostgreSQL,
+# oauth2-proxy, Dex, Loki, Promtail, Prometheus, Grafana) can be switched off
+# and replaced by something you already run.
+
+global:
+  # Default StorageClass for every PVC this chart creates. A per-volume
+  # `storageClass` still wins; use "-" to force `storageClassName: ""`
+  # (static binding, no dynamic provisioning). Empty = the cluster default.
+  storageClass: ""
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/ontele/ontele
+  # Empty = the chart appVersion — a pinned, immutable tag published by CI for
+  # every release. Set "latest" only if you want reschedules to track main.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# StatefulSet replicas (pods are named ontele-0, ontele-1, …). More than one
+# needs RWX storage for the shared data/recordings claims and cookie/session
+# affinity at the edge — the safe default is 1.
+replicaCount: 1
+# HPA for the ontele StatefulSet (overrides replicaCount when enabled)
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: null
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# ---- Ontele configuration ----------------------------------------------------
+# Values here only BOOTSTRAP the Settings row on first run; afterwards the
+# Settings page (stored in Postgres) owns them, so upgrades never clobber
+# values tuned in the UI.
+config:
+  # Library scan roots inside the container (comma-separated). The media
+  # share mounts at /media — by default only its movies/ and tv/ subfolders
+  # are scanned (and decide the kind: files under movies/ are movies, under
+  # tv/ episodes), so siblings like /media/music or other apps' folders are
+  # ignored. First-run bootstrap: after that, manage folders in Settings.
+  mediaDirs: "/media/movies,/media/tv"
+  musicDirs: "/music"
+  # proxy: trust oauth2-proxy identity headers (401 without them).
+  # none:  everyone is the single "local" admin — only for trusted LANs.
+  auth: none
+  # Comma-separated emails/usernames that are admins; when both are empty the
+  # first user ever seen becomes admin.
+  adminUsers: ""
+  adminGroups: ""
+  # HDHomeRun IP. UDP discovery does not cross the CNI; pin it here or use
+  # hostNetwork below.
+  hdhrIp: ""
+  xmltv: ""
+  # off | skip | delete
+  commercials: skip
+  # DVR post-processing (first-run bootstrap; editable in Settings). The image
+  # ships /usr/local/bin/handbrake-postprocess.sh: HandBrakeCLI-encodes a
+  # finished recording and files it into /media/tv or /media/movies, then
+  # triggers a rescan. Empty = recordings stay in /recordings.
+  dvrPostCmd: ""
+  # TMDB v3 API key. Prefer `existingSecret` (key: ONTELE_TMDB_API_KEY).
+  tmdbApiKey: ""
+  existingSecret: ""
+  logFormat: json
+  rustLog: "info,sqlx=warn"
+  timezone: UTC
+  # Extra environment for the Ontele container.
+  extraEnv: []
+
+# Put the pod on the node network so HDHomeRun UDP broadcast discovery works.
+# The Service still targets port 7979.
+hostNetwork: false
+
+# Hardware transcoding: mount /dev/dri (VA-API / QSV) into the container.
+dri:
+  enabled: false
+  hostPath: /dev/dri
+  # host gids of the `video` and `render` groups
+  supplementalGroups: [44, 109]
+
+persistence:
+  # artwork cache, HLS scratch, sprites, subtitles
+  data:
+    enabled: true
+    existingClaim: ""
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+    size: 20Gi
+  recordings:
+    enabled: true
+    existingClaim: ""
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+    size: 500Gi
+  # Your libraries. By default a PVC is created automatically (dynamic
+  # provisioning) and you fill it however you like; point at what you already
+  # have instead with ONE of existingClaim / hostPath / nfs — those skip the
+  # PVC entirely (hostPath and nfs mount the share directly).
+  media:
+    enabled: true
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+    size: 250Gi
+    existingClaim: ""
+    # e.g. /tank/media — mounted straight from the node, no PV/PVC involved
+    hostPath: ""
+    nfs:
+      server: ""
+      path: ""
+    readOnly: true
+  music:
+    enabled: false
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+    size: 100Gi
+    existingClaim: ""
+    hostPath: ""
+    nfs:
+      server: ""
+      path: ""
+    readOnly: true
+  # HLS scratch + comskip work dirs
+  tmpSizeLimit: 8Gi
+
+extraVolumes: []
+extraVolumeMounts: []
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "4"
+    memory: 4Gi
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  fsGroupChangePolicy: OnRootMismatch
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+nodeSelector: {}
+tolerations: []
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: kubernetes.io/arch
+              operator: In
+              values: ["amd64"]
+priorityClassName: ""
+
+service:
+  type: NodePort
+  port: 32500
+  # e.g. 30979 — only for type: NodePort. Note: this exposes Ontele itself,
+  # BYPASSING the identity proxy (and the NetworkPolicy will block it while
+  # oauth2Proxy.enabled) — for LAN / config.auth=none setups. To expose the
+  # authenticated front door instead, use oauth2Proxy.service.
+  nodePort: null
+  annotations: {}
+
+# The public origin, when it can't be derived from ingress/httpRoute/gateway
+# below — REQUIRED for a NodePort-only front door (oauth2Proxy.service) so
+# OAuth redirects, the Dex issuer and Grafana's root URL are reachable, e.g.
+# "http://192.168.1.50:30080". Overrides the derived URL when set.
+externalUrl: ""
+
+# Only oauth2-proxy (or Ontele itself when the proxy is disabled) is exposed.
+ingress:
+  enabled: false
+  className: nginx
+  host: ontele.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: 16m
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+  tls:
+    enabled: true
+    secretName: ontele-tls
+
+# Gateway API alternative to Ingress (both can be enabled).
+# HTTPRoute for Gateway API clusters (e.g. Cilium) — usually with
+# ingress.enabled=false. Attach to a Gateway you already run via parentRefs,
+# or set gateway.enabled below and the chart brings its own.
+httpRoute:
+  enabled: false
+  host: ontele.example.com
+  # https at the edge (drives cookie security + redirect URLs; with the
+  # in-chart gateway it also adds the HTTPS listener and http->https redirect)
+  tls: true
+  # Your own Gateway; leave empty to attach to the in-chart one (gateway.enabled)
+  parentRefs: []
+  #  - name: shared-gateway
+  #    namespace: infra
+  annotations: {}
+
+# In-chart Gateway serving the HTTPRoute above (setting gateway.enabled also
+# renders the HTTPRoute — httpRoute.enabled needn't be set separately).
+# Defaults target Cilium's Gateway API implementation: gatewayClassName
+# "cilium" (needs the Gateway API CRDs and Cilium's gateway-api support
+# enabled). Any conformant class works.
+gateway:
+  enabled: false
+  className: cilium
+  # Pin the LoadBalancer IP — Cilium LB-IPAM honours spec.addresses
+  address: ""
+  # TLS certificate Secret for the https listener; required when httpRoute.tls
+  # (create it yourself or via cert-manager)
+  tls:
+    secretName: ""
+  annotations: {}
+
+# Restrict who may talk to Ontele: only oauth2-proxy and Prometheus pods.
+networkPolicy:
+  enabled: true
+
+metrics:
+  # prometheus-operator ServiceMonitor (in addition to the in-chart Prometheus)
+  serviceMonitor:
+    enabled: false
+    interval: 15s
+    labels: {}
+
+# ---- PostgreSQL ------------------------------------------------------------------
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: 18-alpine
+    pullPolicy: IfNotPresent
+  auth:
+    username: ontele
+    database: ontele
+    # Set a real password or use existingSecret (key: POSTGRES_PASSWORD).
+    password: ""
+    existingSecret: ""
+  persistence:
+    storageClass: ""
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+# Used when postgresql.enabled is false.
+externalDatabase:
+  # postgres://user:pass@host:5432/db — or reference a secret holding it
+  url: ""
+  existingSecret: ""
+  existingSecretKey: DATABASE_URL
+
+# ---- oauth2-proxy (identity) ----------------------------------------------------
+oauth2Proxy:
+  enabled: false
+  replicaCount: 2
+  # The front door: the Ingress/Gateway targets this Service. type: NodePort
+  # (optionally pinned) exposes the authenticated edge on every node without
+  # any LoadBalancer or Ingress at http://<node-ip>:<nodePort>
+  service:
+    type: ClusterIP
+    nodePort: null      # e.g. 30080 — only for type: NodePort
+    annotations: {}
+  image:
+    repository: quay.io/oauth2-proxy/oauth2-proxy
+    tag: v7.15.4
+    pullPolicy: IfNotPresent
+  provider: oidc
+  # Your identity provider. Ignored when dex.enabled (the bundled IdP is used).
+  oidcIssuerUrl: https://accounts.google.com
+  clientId: ""
+  clientSecret: ""
+  # 32 random bytes, base64: python3 -c 'import os,base64;print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
+  cookieSecret: ""
+  # Secret with OAUTH2_PROXY_CLIENT_ID / OAUTH2_PROXY_CLIENT_SECRET / OAUTH2_PROXY_COOKIE_SECRET
+  existingSecret: ""
+  emailDomains: "*"
+  scope: "openid email profile"
+  cookieName: _ontele
+  cookieExpire: 168h
+  cookieRefresh: 1h
+  # Defaults to <scheme>://<host>/oauth2/callback
+  redirectUrl: ""
+  extraEnv: []
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+# ---- HandBrake (optional companion for DVR post-processing) -----------------
+# Web UI on :5800 (VNC :5900). The DVR post-process script (tools/
+# handbrake-postprocess.sh, wired via config.dvrPostCmd) can also encode
+# in-pod with handbrake-cli — this container is for manual/watch-folder use.
+handbrake:
+  enabled: false
+  image:
+    repository: jlesage/handbrake
+    tag: latest
+    pullPolicy: IfNotPresent
+  env:
+    USER_ID: 1000        # match the media share owner
+    GROUP_ID: 1000
+  service:
+    type: ClusterIP
+    webPort: 5800
+    vncPort: 5900
+    nodePort: null       # e.g. 30580 with type: NodePort
+  # /config (settings + queue) — a small PVC
+  config:
+    size: 1Gi
+    storageClass: ""
+  # watch/ output/ storage/ mounts: hostPath or existingClaim (hostPath wins)
+  watch:   { hostPath: "", existingClaim: "" }
+  output:  { hostPath: "", existingClaim: "" }
+  storage: { hostPath: "", existingClaim: "", readOnly: true }
+  dri:
+    enabled: false       # mount /dev/dri for VAAPI/QSV
+  resources: {}
+
+# ---- Dex (bundled OpenID Connect provider for trials; disabled by default) -------
+dex:
+  enabled: false
+  replicaCount: 1
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 80
+  image:
+    repository: ghcr.io/dexidp/dex
+    tag: v2.45.1
+    pullPolicy: IfNotPresent
+  clientSecret: ontele-dev-secret
+  # bcrypt hashes; both defaults are "password"
+  staticPasswords:
+    - email: admin@example.com
+      username: admin
+      userID: 08a8684b-db88-4b73-90a9-3cd1661f5466
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    - email: viewer@example.com
+      username: viewer
+      userID: 5d9b2d7a-7f9d-4d1e-9a8e-2c5f1b3e4a6c
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+# ---- Loki / Promtail / Prometheus / Grafana -------------------------------------
+loki:
+  enabled: false
+  image:
+    repository: grafana/loki
+    tag: 3.7.6
+    pullPolicy: IfNotPresent
+  persistence:
+    storageClass: ""
+    size: 20Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+promtail:
+  enabled: false
+  image:
+    repository: grafana/promtail
+    tag: 3.6.9
+    pullPolicy: IfNotPresent
+  # Loki push endpoint. Defaults to the in-chart Loki; REQUIRED when
+  # loki.enabled=false, e.g. http://loki.monitoring:3100/loki/api/v1/push
+  # (set promtail.enabled=false instead if your stack already tails pods
+  # with its own Promtail/Alloy — Ontele just logs JSON to stdout).
+  lokiUrl: ""
+  rbac:
+    create: true
+  tolerations:
+    - operator: Exists
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+prometheus:
+  enabled: false
+  image:
+    repository: prom/prometheus
+    tag: v3.9.1
+    pullPolicy: IfNotPresent
+  retention: 30d
+  persistence:
+    storageClass: ""
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+grafana:
+  enabled: false
+  image:
+    repository: grafana/grafana
+    tag: 12.4.9
+    pullPolicy: IfNotPresent
+  # Served at <public url>/grafana/ behind oauth2-proxy; identity arrives as
+  # X-Forwarded-Email (Grafana auth proxy) so there is no second login.
+  adminPassword: ""
+  existingSecret: ""
+  # New users get this org role.
+  autoAssignOrgRole: Viewer
+  # Already run Grafana (kube-prometheus-stack / grafana chart with the
+  # k8s-sidecar)? Set grafana.enabled=false and sidecar.enabled=true: the
+  # Ontele dashboard (and datasources for any in-chart Loki/Prometheus) are
+  # published as labelled ConfigMaps your sidecar auto-imports. The dashboard
+  # expects datasource UIDs `loki` and `prometheus`.
+  sidecar:
+    enabled: false
+    label: grafana_dashboard
+    labelValue: "1"
+    datasourceLabel: grafana_datasource
+    # extra annotations, e.g. {grafana_folder: Ontele}
+    annotations: {}
+  persistence:
+    storageClass: ""
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi

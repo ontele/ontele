@@ -1,0 +1,26 @@
+Ontele
+Copyright 2026 The Ontele Authors
+https://github.com/ontele/ontele
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This distribution bundles the following third-party components in the
+embedded web UI:
+
+  - hls.js — Apache License 2.0
+    ui/vendor/hls.min.js (license: ui/vendor/hls.LICENSE.txt)
+
+  - Sora and Inter typefaces — SIL Open Font License 1.1
+    ui/vendor/fonts/ (license: ui/vendor/fonts/OFL.txt)
+
+Rust crate dependencies are compiled into the binary under their respective
+licenses (MIT / Apache-2.0 / BSD / ISC / MPL-2.0 / Unicode-3.0); run
+`cargo license` or `cargo deny list` for the full inventory.
+
+Comskip (GPL-2.0) is an optional external program executed at runtime; it is
+neither bundled with nor linked into this distribution. ffmpeg/ffprobe
+(LGPL/GPL) are likewise invoked as separate processes.
+
+Metadata is fetched at runtime from TMDB (https://www.themoviedb.org — this
+product uses the TMDB API but is not endorsed or certified by TMDB) and
+MusicBrainz / Cover Art Archive (https://musicbrainz.org, CC0 / CC BY-NC-SA).

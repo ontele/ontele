@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ontele-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "DATABASE_URL=postgres://ontele:ontele@localhost:55432/ontele ONTELE_AUTH=none ONTELE_LOG_FORMAT=pretty ONTELE_MEDIA=/tmp/ontele-sample/media/movies,/tmp/ontele-sample/media/tv ./target/debug/ontele"],
+      "port": 7979
+    }
+  ]
+}

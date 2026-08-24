@@ -1,0 +1,35 @@
+{{- /* Copyright 2026 The Ontele Authors — SPDX-License-Identifier: Apache-2.0
+Headless governing services for the StatefulSets (stable pod DNS). */}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ontele.fullname" . | trunc 60 | trimSuffix "-" }}-hl
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "server") | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "ontele.selectorLabels" (dict "root" . "component" "server") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+{{- if .Values.dex.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "dex") | trunc 60 | trimSuffix "-" }}-hl
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "dex") | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "ontele.selectorLabels" (dict "root" . "component" "dex") | nindent 4 }}
+  ports:
+    - name: http
+      port: 5556
+      targetPort: http
+{{- end }}

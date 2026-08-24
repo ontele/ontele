@@ -1,0 +1,28 @@
+{{- if .Values.dex.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "dex") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "dex") | nindent 4 }}
+data:
+  config.yaml: |
+    issuer: {{ include "ontele.dex.issuer" . }}
+    storage:
+      type: memory
+    web:
+      http: 0.0.0.0:5556
+    oauth2:
+      skipApprovalScreen: true
+      responseTypes: ["code"]
+    staticClients:
+      - id: ontele
+        name: Ontele
+        secret: {{ .Values.dex.clientSecret | quote }}
+        redirectURIs:
+          - {{ printf "%s/oauth2/callback" (include "ontele.publicUrl" .) | quote }}
+    enablePasswordDB: true
+    staticPasswords:
+      {{- toYaml .Values.dex.staticPasswords | nindent 6 }}
+{{- end }}

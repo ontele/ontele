@@ -1,0 +1,229 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 The Ontele Authors
+#
+# Full stack: Ontele + Postgres + oauth2-proxy (identity) + Loki/Promtail
+# (logs) + Prometheus (metrics) + Grafana (dashboards).
+#
+#   Zero-config trial (bundled Dex identity provider, users admin@example.com
+#   and viewer@example.com, password "password"):
+#     docker compose -f docker-compose.yml -f docker-compose.dev-idp.yml up -d --build
+#
+#   Real identity provider (Google, Entra, Authentik, Keycloak, GitHub…):
+#     cp .env.example .env   # OIDC client + secrets + library paths
+#     docker compose up -d --build
+#
+#   open http://localhost:4180            (Ontele, behind oauth2-proxy)
+#   open http://localhost:4180/grafana/   (Grafana, same identity)
+#
+# Every ${VAR:-default} below is a DEVELOPMENT default; set real values in
+# .env before exposing this to anything but localhost.
+#
+# Only oauth2-proxy publishes a port. Ontele, Postgres, Loki and Prometheus
+# are reachable solely on the compose network, so identity headers cannot be
+# spoofed from outside the host.
+
+name: ontele
+
+x-logging: &json-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ontele}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ontele}
+      POSTGRES_DB: ${POSTGRES_DB:-ontele}
+    volumes:
+      - pgdata:/var/lib/postgresql   # PG18 image: PGDATA is /var/lib/postgresql/18/docker
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ontele} -d ${POSTGRES_DB:-ontele}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [backend]
+    logging: *json-logging
+
+  ontele:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: ghcr.io/ontele/ontele:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-ontele}:${POSTGRES_PASSWORD:-ontele}@postgres:5432/${POSTGRES_DB:-ontele}
+      ONTELE_AUTH: proxy
+      ONTELE_ADMIN_USERS: ${ONTELE_ADMIN_USERS:-}
+      ONTELE_ADMIN_GROUPS: ${ONTELE_ADMIN_GROUPS:-}
+      ONTELE_XMLTV: ${ONTELE_XMLTV:-}
+      ONTELE_HDHR: ${ONTELE_HDHR:-}
+      ONTELE_COMMERCIALS: ${ONTELE_COMMERCIALS:-skip}
+      ONTELE_TMDB_API_KEY: ${ONTELE_TMDB_API_KEY:-}
+      ONTELE_LOG_FORMAT: json
+      RUST_LOG: info,sqlx=warn
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ontele-data:/data
+      - ${MEDIA_DIR:-./media}:/media:ro   # scanned roots default to /media/movies + /media/tv (ONTELE_MEDIA)
+      - ${MUSIC_DIR:-./music}:/music:ro
+      - ${RECORDINGS_DIR:-./recordings}:/recordings
+    # HDHomeRun UDP discovery needs the LAN; either uncomment host networking
+    # (then remove `networks`/ports indirection and point oauth2-proxy at
+    # http://host.docker.internal:7979) or set ONTELE_HDHR to the tuner IP.
+    # network_mode: host
+    # devices: ["/dev/dri:/dev/dri"]   # VA-API / QSV hardware transcode
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7979/readyz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    labels:
+      ontele.role: server
+    logging: *json-logging
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.4
+    restart: unless-stopped
+    depends_on: [ontele, grafana]
+    ports:
+      - "4180:4180"
+    environment:
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_PROVIDER: ${OAUTH2_PROXY_PROVIDER:-oidc}
+      OAUTH2_PROXY_OIDC_ISSUER_URL: ${OAUTH2_PROXY_OIDC_ISSUER_URL:-http://localhost:5556/dex}
+      OAUTH2_PROXY_CLIENT_ID: ${OAUTH2_PROXY_CLIENT_ID:-ontele}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET:-ontele-dev-secret}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET:-dev-only-cookie-secret-32bytes!!}
+      OAUTH2_PROXY_COOKIE_SECURE: ${OAUTH2_PROXY_COOKIE_SECURE:-false}
+      OAUTH2_PROXY_COOKIE_NAME: _ontele
+      OAUTH2_PROXY_COOKIE_EXPIRE: 168h
+      OAUTH2_PROXY_COOKIE_REFRESH: 1h
+      OAUTH2_PROXY_EMAIL_DOMAINS: ${OAUTH2_PROXY_EMAIL_DOMAINS:-*}
+      OAUTH2_PROXY_REDIRECT_URL: ${OAUTH2_PROXY_REDIRECT_URL:-http://localhost:4180/oauth2/callback}
+      OAUTH2_PROXY_SCOPE: ${OAUTH2_PROXY_SCOPE:-openid email profile}
+      # identity → headers Ontele and Grafana trust
+      OAUTH2_PROXY_PASS_USER_HEADERS: "true"
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
+      OAUTH2_PROXY_PASS_ACCESS_TOKEN: "false"
+      # keep X-Forwarded-User = stable subject; with prefer-email-to-user the
+      # proxy drops X-Forwarded-Email entirely (Ontele + Grafana need it)
+      OAUTH2_PROXY_PREFER_EMAIL_TO_USER: "false"
+      # two upstreams behind one login: Ontele at /, Grafana at /grafana/
+      OAUTH2_PROXY_UPSTREAMS: http://ontele:7979/,http://grafana:3000/grafana/
+      OAUTH2_PROXY_SKIP_AUTH_ROUTES: ^/healthz$,^/readyz$
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_UPSTREAM_TIMEOUT: 0s
+      OAUTH2_PROXY_FLUSH_INTERVAL: 100ms
+      OAUTH2_PROXY_SILENCE_PING_LOGGING: "true"
+    networks: [backend, edge]
+    logging: *json-logging
+
+  loki:
+    image: grafana/loki:3.7.6
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    networks: [backend]
+    # no healthcheck: the loki image ships no shell/wget to run one; check
+    # readiness with `curl http://loki:3100/ready` from another container
+    logging: *json-logging
+
+  promtail:
+    image: grafana/promtail:3.6.9
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail.yml
+    depends_on: [loki]
+    volumes:
+      - ./promtail/promtail-docker.yml:/etc/promtail/promtail.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - promtail-data:/tmp
+    networks: [backend]
+    logging: *json-logging
+
+  prometheus:
+    image: prom/prometheus:v3.9.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom-data:/prometheus
+    networks: [backend]
+    logging: *json-logging
+
+  grafana:
+    image: grafana/grafana:12.4.9
+    restart: unless-stopped
+    depends_on: [loki, prometheus]
+    environment:
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # identity from oauth2-proxy headers — no second login
+      GF_AUTH_PROXY_ENABLED: "true"
+      GF_AUTH_PROXY_HEADER_NAME: X-Forwarded-Email
+      GF_AUTH_PROXY_HEADER_PROPERTY: email
+      GF_AUTH_PROXY_HEADERS: "Name:X-Forwarded-Preferred-Username"
+      GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
+      GF_AUTH_PROXY_WHITELIST: 0.0.0.0/0
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_AUTO_ASSIGN_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks: [backend]
+    logging: *json-logging
+
+  # Optional: docker compose --profile handbrake up -d
+  handbrake:
+    image: jlesage/handbrake:latest
+    profiles: [handbrake]
+    restart: unless-stopped
+    environment:
+      USER_ID: "1000"
+      GROUP_ID: "1000"
+    ports:
+      - "5800:5800"   # web UI
+      - "5900:5900"   # VNC
+    # uncomment for VA-API/QSV hardware encoding (hosts with a GPU only)
+    # devices:
+    #   - /dev/dri:/dev/dri
+    volumes:
+      - handbrake-config:/config
+      - ${RECORDINGS_DIR:-./recordings}:/watch
+      - ${MEDIA_DIR:-./media}:/output
+
+networks:
+  # Not `internal`: Ontele needs egress to TMDB/MusicBrainz/XMLTV and the
+  # HDHomeRun on the LAN. Nothing on it publishes a port except oauth2-proxy.
+  backend:
+  edge:
+
+volumes:
+  handbrake-config:
+  pgdata:
+  ontele-data:
+  loki-data:
+  promtail-data:
+  prom-data:
+  grafana-data:

@@ -1,0 +1,52 @@
+{{- if .Values.grafana.enabled }}
+{{- $loki := include "ontele.component" (dict "root" . "name" "loki") }}
+{{- $prom := include "ontele.component" (dict "root" . "name" "prometheus") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "grafana") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "grafana") | nindent 4 }}
+data:
+  GF_SERVER_ROOT_URL: {{ printf "%s/grafana/" (include "ontele.publicUrl" .) | quote }}
+  GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+  {{- if .Values.oauth2Proxy.enabled }}
+  # identity from oauth2-proxy headers — no second login
+  GF_AUTH_PROXY_ENABLED: "true"
+  GF_AUTH_PROXY_HEADER_NAME: X-Forwarded-Email
+  GF_AUTH_PROXY_HEADER_PROPERTY: email
+  GF_AUTH_PROXY_HEADERS: "Name:X-Forwarded-Preferred-Username"
+  GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
+  GF_AUTH_PROXY_WHITELIST: "0.0.0.0/0"
+  GF_AUTH_DISABLE_LOGIN_FORM: "true"
+  {{- end }}
+  GF_USERS_AUTO_ASSIGN_ORG_ROLE: {{ .Values.grafana.autoAssignOrgRole | quote }}
+  GF_SECURITY_ADMIN_USER: admin
+  GF_ANALYTICS_REPORTING_ENABLED: "false"
+  GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+  GF_NEWS_NEWS_FEED_ENABLED: "false"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "grafana") }}-provisioning
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "grafana") | nindent 4 }}
+data:
+  datasources.yml: |
+    {{- .Files.Get "files/grafana-datasources.yml" | replace "http://loki:3100" (printf "http://%s:3100" $loki) | replace "http://prometheus:9090" (printf "http://%s:9090" $prom) | nindent 4 }}
+  dashboards.yml: |
+    {{- .Files.Get "files/grafana-dashboards-provider.yml" | nindent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ontele.component" (dict "root" . "name" "grafana") }}-dashboards
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontele.componentLabels" (dict "root" . "component" "grafana") | nindent 4 }}
+data:
+  {{- (.Files.Glob "files/dashboards/*.json").AsConfig | nindent 2 }}
+{{- end }}
